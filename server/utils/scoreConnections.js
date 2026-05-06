@@ -31,6 +31,11 @@ function parseCSVRow(line) {
   return result;
 }
 
+function stripJsonFences(text) {
+  return text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+}
+
+// Strip common legal suffixes so "Google LLC" and "Google" both normalize to "google".
 const CORP_SUFFIXES = /\b(inc|llc|ltd|corp|co|company|group|holdings|international|technologies|technology|solutions|services|platform|platforms|pbc|gmbh|ag|sa|plc)\b\.?/gi;
 
 function normalizeCompany(name) {
@@ -49,6 +54,9 @@ function companyMatches(csvCompany, targetCompany) {
   return csv === target;
 }
 
+// ─── Relevance scoring ────────────────────────────────────────────────────────
+
+// Primary: how closely the connection's title matches the job's team/function.
 function scoreFunctionRelevance(title, functionKeywords) {
   if (!functionKeywords || functionKeywords.length === 0) return 15;
   const t = (title || '').toLowerCase();
@@ -58,6 +66,7 @@ function scoreFunctionRelevance(title, functionKeywords) {
   return 15;
 }
 
+// Secondary: seniority / influence level within the company.
 function scoreSeniority(title) {
   const t = (title || '').toLowerCase();
   if (/\b(chief|president|founder|co-founder|ceo|cto|cfo|coo|c[a-z]o)\b/.test(t)) return 40;
@@ -68,6 +77,8 @@ function scoreSeniority(title) {
   return 15;
 }
 
+// ─── Haiku extraction ─────────────────────────────────────────────────────────
+
 async function extractJobContext(jobPostingText) {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -75,23 +86,26 @@ async function extractJobContext(jobPostingText) {
     system: 'You are a job posting parser. Return ONLY valid JSON — no markdown, no fences, no explanation.',
     messages: [{
       role: 'user',
-      content: `Extract the company name and the function/team keywords from this job posting.
+      content: `Extract the company name and function/team keywords from this job posting.
 
-Return JSON matching exactly:
+Return JSON exactly:
 {"company": string, "functionKeywords": string[]}
 
-functionKeywords: 3-6 short words or phrases describing the team/function (e.g. "engineering", "data science", "product", "marketing", "sales", "design", "finance", "recruiting"). These will be matched against job titles.
+functionKeywords: 3-6 short words describing the team/function (e.g. "engineering", "data science", "product", "marketing", "sales", "design", "finance"). These will be matched against LinkedIn job titles.
 
 JOB POSTING:
 ${jobPostingText}`,
     }],
   });
   try {
-    return JSON.parse(message.content[0].text.trim());
+    return JSON.parse(stripJsonFences(message.content[0].text));
   } catch {
+    // If JSON parse still fails, treat the whole response as the company name
     return { company: message.content[0].text.trim(), functionKeywords: [] };
   }
 }
+
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 async function scoreConnections(csvText, jobPostingText) {
   const lines = csvText.split('\n');
@@ -105,8 +119,7 @@ async function scoreConnections(csvText, jobPostingText) {
     );
   }
 
-  const headerLine = lines[headerIndex];
-  const headers = parseCSVRow(headerLine).map(h => h.toLowerCase().trim());
+  const headers = parseCSVRow(lines[headerIndex]).map(h => h.toLowerCase().trim());
 
   const idx = {
     firstName:   headers.findIndex(h => h.includes('first')),
