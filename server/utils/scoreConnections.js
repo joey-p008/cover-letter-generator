@@ -31,15 +31,22 @@ function parseCSVRow(line) {
   return result;
 }
 
+const CORP_SUFFIXES = /\b(inc|llc|ltd|corp|co|company|group|holdings|international|technologies|technology|solutions|services|platform|platforms|pbc|gmbh|ag|sa|plc)\b\.?/gi;
+
+function normalizeCompany(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(CORP_SUFFIXES, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function companyMatches(csvCompany, targetCompany) {
-  const csv = csvCompany.toLowerCase().trim();
-  const target = targetCompany.toLowerCase().trim();
+  const csv = normalizeCompany(csvCompany);
+  const target = normalizeCompany(targetCompany);
   if (!csv || !target || target.length < 2) return false;
-  if (csv.includes(target) || target.includes(csv)) return true;
-  const csvFirst = csv.split(/[\s,.(]/)[0];
-  const targetFirst = target.split(/[\s,.(]/)[0];
-  if (targetFirst.length >= 3 && (csv.includes(targetFirst) || targetFirst.includes(csvFirst))) return true;
-  return false;
+  return csv === target;
 }
 
 function scoreFunctionRelevance(title, functionKeywords) {
@@ -112,6 +119,17 @@ async function scoreConnections(csvText, jobPostingText) {
   };
 
   const { company: companyName, functionKeywords } = await extractJobContext(jobPostingText);
+
+  const normalizedTarget = normalizeCompany(companyName);
+  console.log(`[connections] extracted company: "${companyName}" → normalized: "${normalizedTarget}"`);
+
+  const allCompanies = lines
+    .slice(headerIndex + 1)
+    .filter(line => line.trim())
+    .map(line => parseCSVRow(line)[idx.company] || '')
+    .filter(Boolean);
+  const uniqueCompanies = [...new Set(allCompanies)].slice(0, 10);
+  console.log(`[connections] sample CSV companies:`, uniqueCompanies.map(c => `"${c}" → "${normalizeCompany(c)}"`));
 
   return lines
     .slice(headerIndex + 1)
