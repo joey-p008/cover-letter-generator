@@ -9,10 +9,7 @@ const matchRoute = require('./routes/match');
 const app = express();
 const PORT = 3001;
 
-app.use(cors({
-  origin: 'http://localhost:5173',
-  exposedHeaders: ['Content-Disposition', 'X-Letter-Text'],
-}));
+app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
 app.use('/api/generate', generateRoute);

@@ -22,9 +22,9 @@ Node.js 20.15.1 is in use. Both Vite and pdf-parse are pinned to versions compat
 
 Split client/server app. Three analyses run in parallel when the user clicks Generate:
 
-1. **Cover Letter** — resume + job posting → Claude → `.docx`
-2. **Connections** — LinkedIn CSV + job posting → Claude finds + ranks connections at the company
-3. **Job Match** — resume + job posting → Claude extracts structured data → code scores 6 dimensions
+1. **Cover Letter** — resume + job posting → Claude Sonnet (streamed) → `.docx`
+2. **Connections** — LinkedIn CSV + job posting → Haiku extracts company name → JS filters CSV → Sonnet scores matches
+3. **Job Match** — resume + job posting → Haiku extracts structured data → code scores 6 dimensions
 
 Results appear in three tabs on the results screen. Each tab is independent; one failing doesn't block the others.
 
@@ -33,7 +33,7 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 ## Server (`server/` — CommonJS, Express 5)
 
 **Routes** (all accept multipart via `multer` memory storage):
-- `routes/generate.js` — `POST /api/generate`: resume + jobPosting → DOCX response with `X-Letter-Text` header (base64 letter text for browser preview)
+- `routes/generate.js` — `POST /api/generate`: resume + jobPosting → **SSE stream** of text chunks, then a final `done` event carrying the DOCX as base64
 - `routes/connections.js` — `POST /api/connections`: linkedinCsv + jobPosting → `{ connections: [...] }`
 - `routes/match.js` — `POST /api/match`: resume + jobPosting → `{ overall, breakdown, jobData, candidateData }`
 
@@ -41,10 +41,12 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 
 **Utilities:**
 - `utils/parseResume.js` — dispatches to `pdf-parse` (PDF) or `mammoth` (DOCX) by mimetype
-- `utils/generateLetter.js` — calls `claude-sonnet-4-6`; full system prompt with anti-fabrication + voice rules
+- `utils/generateLetter.js` — exports `streamLetter(resumeText, jobPostingText)`, an async generator that yields text chunks from `claude-sonnet-4-6` via the SDK's `textStream`; full system prompt with anti-fabrication + voice rules
 - `utils/createDocx.js` — positional line parser (line 1 = name 16pt bold, line 2 = contact 10pt, rest 11pt); 1-inch margins, Calibri, 1.15 line spacing
-- `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()` (scans all lines — LinkedIn exports prepend a multi-line "Notes: To protect our members' privacy..." preamble before the real header row); strips preamble before sending to Claude; returns JSON array of matched + scored connections with `linkedinUrl` included
-- `utils/scoreJobMatch.js` — two parallel Claude calls (job extraction + candidate extraction), then pure JS scoring functions for all 6 dimensions
+- `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()`; uses `claude-haiku-4-5-20251001` (max_tokens: 30) to extract the company name from the job posting, then filters the CSV in JS with `companyMatches()` before sending only matching rows to `claude-sonnet-4-6` for relevance scoring; returns JSON array with `linkedinUrl` included
+- `utils/scoreJobMatch.js` — two parallel `claude-haiku-4-5-20251001` calls (job extraction + candidate extraction), then pure JS scoring functions for all 6 dimensions
+
+**SSE streaming for cover letter:** `routes/generate.js` sets `Content-Type: text/event-stream` after validating inputs, then pipes chunks from `streamLetter` as `data: {"type":"chunk","text":"..."}` events. When the full text is assembled it creates the DOCX and sends a final `data: {"type":"done","docxBase64":"...","filename":"..."}` event. Validation errors before streaming starts are returned as normal JSON with a 4xx/5xx status. Errors mid-stream are sent as `data: {"type":"error","error":"..."}`.
 
 **LinkedIn CSV format:** LinkedIn exports contain these columns: `First Name, Last Name, LinkedIn URL, Email Address, Company, Position, Connected On`. The file begins with several preamble lines before the header row; `findHeaderRowIndex()` locates the real header by scanning for a line that contains all of `first name`, `last name`, `company`, and `position`. Connection names in the UI render as clickable LinkedIn profile links when `linkedinUrl` is present.
 
@@ -53,15 +55,17 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 **State in `App.jsx`:**
 - `isResultsView` — switches between form and results layout
 - `activeTab` — `'letter' | 'connections' | 'match'`
-- `letterResult / connectionsResult / matchResult` — each has `{ status, ...data }` where status is `'loading' | 'success' | 'error' | 'no-csv'`
+- `letterResult / connectionsResult / matchResult` — each has `{ status, ...data }` where status is `'loading' | 'streaming' | 'success' | 'error' | 'no-csv'`
 
 **Components:**
 - `components/FileUpload.jsx` — drag-and-drop for resume (required) + LinkedIn CSV (optional)
 - `components/JobPostingInput.jsx` — textarea for job description
 - `components/ResultTabs.jsx` — tab navigation bar
-- `components/CoverLetterPreview.jsx` — loading/error/letter states; download button
+- `components/CoverLetterPreview.jsx` — handles `loading` (spinner), `streaming` (live text + blinking cursor + disabled download button), `success` (full letter + download), and `error` states
 - `components/ConnectionsList.jsx` — ranked connection cards with score badges; handles no-csv/empty/error states
 - `components/JobMatchScore.jsx` — score circle + breakdown table with score bars; skips N/A dimensions
+
+**Cover letter streaming in `App.jsx`:** `fetchLetter` reads the SSE response body via `ReadableStream`, splits on `\n\n` boundaries, parses each `data:` event, and calls `setLetterResult` with `status: 'streaming'` on each chunk. The `done` event converts the base64 DOCX to a `Blob` and transitions to `status: 'success'`.
 
 ## Job match scoring rules
 

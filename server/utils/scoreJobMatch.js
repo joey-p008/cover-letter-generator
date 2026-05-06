@@ -122,7 +122,7 @@ function computeOverall(scores) {
 
 async function extractJobData(jobPostingText) {
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
     system: `You are a job posting parser. Extract structured information. Return ONLY valid JSON matching this schema — no markdown, no fences, no explanation:
 {
@@ -146,7 +146,7 @@ Only extract what is explicitly stated — do not guess.`,
 
 async function extractCandidateData(resumeText) {
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
     system: `You are a resume parser. Extract the candidate's experience level and skills. Return ONLY valid JSON — no markdown, no fences:
 {

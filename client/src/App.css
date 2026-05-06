@@ -247,6 +247,20 @@
   margin: 0 0 4px;
 }
 
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: currentColor;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blink 0.8s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
 @media (max-width: 560px) {
   .form-card {
     padding: 20px;

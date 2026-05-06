@@ -51,8 +51,8 @@ Sincerely,
 Pull name, email, phone, and city from the resume. If any detail is missing, insert a placeholder in brackets.
 Return only the letter. No preamble, no explanation, no commentary after.`;
 
-async function generateLetter(resumeText, jobPostingText) {
-  const message = await client.messages.create({
+async function* streamLetter(resumeText, jobPostingText) {
+  const stream = client.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
@@ -64,7 +64,9 @@ async function generateLetter(resumeText, jobPostingText) {
     ],
   });
 
-  return message.content[0].text;
+  for await (const text of stream.textStream) {
+    yield text;
+  }
 }
 
-module.exports = { generateLetter };
+module.exports = { streamLetter };

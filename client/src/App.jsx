@@ -30,13 +30,39 @@ export default function App() {
         const body = await res.json().catch(() => ({ error: 'Request failed.' }));
         throw new Error(body.error || 'Request failed.');
       }
-      const contentDisposition = res.headers.get('Content-Disposition') || '';
-      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-      const filename = filenameMatch ? filenameMatch[1] : 'cover-letter.docx';
-      const encoded = res.headers.get('X-Letter-Text');
-      const letterText = encoded ? atob(encoded) : '(Preview unavailable — download to view)';
-      const docxBlob = await res.blob();
-      setLetterResult({ status: 'success', letterText, docxBlob, filename });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let letterText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(part.slice(6)); } catch { continue; }
+
+          if (data.type === 'chunk') {
+            letterText += data.text;
+            setLetterResult({ status: 'streaming', letterText });
+          } else if (data.type === 'done') {
+            const bytes = Uint8Array.from(atob(data.docxBase64), c => c.charCodeAt(0));
+            const docxBlob = new Blob([bytes], {
+              type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            });
+            setLetterResult({ status: 'success', letterText, docxBlob, filename: data.filename });
+          } else if (data.type === 'error') {
+            throw new Error(data.error);
+          }
+        }
+      }
     } catch (err) {
       setLetterResult({ status: 'error', error: err.message });
     }
