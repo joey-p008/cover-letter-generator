@@ -73,12 +73,26 @@ function scoreSalary(salaryMin, salaryMax) {
 }
 
 const SF_BAY_AREA = [
-  'san francisco', 'sf', 'bay area', 'san jose', 'oakland', 'palo alto',
-  'mountain view', 'sunnyvale', 'santa clara', 'menlo park', 'redwood city',
-  'foster city', 'south bay', 'east bay', 'berkeley',
+  // San Francisco
+  'san francisco', 'sf',
+  // Peninsula
+  'daly city', 'south san francisco', 'san bruno', 'burlingame', 'millbrae',
+  'san mateo', 'belmont', 'san carlos', 'redwood city', 'menlo park',
+  'palo alto', 'los altos', 'mountain view', 'sunnyvale', 'cupertino',
+  'santa clara', 'foster city',
+  // South Bay
+  'san jose', 'milpitas', 'campbell', 'los gatos', 'saratoga', 'los altos hills',
+  // East Bay
+  'oakland', 'berkeley', 'emeryville', 'alameda', 'hayward', 'fremont',
+  'newark', 'union city', 'livermore', 'pleasanton', 'dublin', 'san ramon',
+  'walnut creek', 'concord', 'richmond', 'el cerrito',
+  // North Bay
+  'san rafael', 'novato', 'petaluma',
+  // Generic terms
+  'bay area', 'silicon valley', 'south bay', 'east bay', 'north bay',
 ];
 const TIER_2 = [
-  'los angeles', ' la,', 'san diego', 'sacramento',
+  'los angeles', 'san diego', 'sacramento',
   'new york', 'nyc', 'brooklyn', 'manhattan',
   'seattle', 'bellevue', 'redmond',
   'austin',

@@ -511,6 +511,23 @@ a.connection-name:hover {
   color: var(--text-heading);
 }
 
+.score-verdict-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.edited-score-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 2px 8px;
+  opacity: 0.8;
+}
+
 .match-breakdown {
   padding: 0 24px 24px;
 }
@@ -602,6 +619,91 @@ a.connection-name:hover {
   color: var(--text);
 }
 
+/* ── Job details edit controls ── */
+
+.job-edit-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.job-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.job-edit-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.edit-select,
+.edit-input {
+  font-size: 0.85rem;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.edit-select:focus,
+.edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.edit-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.edit-salary-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-salary-row .edit-input {
+  flex: 1;
+  width: auto;
+}
+
+.edit-salary-sep {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.edit-remote-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.edit-remote-row .edit-input {
+  flex: 1;
+  width: auto;
+}
+
+.edit-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* ── Skills breakdown ── */
 
 .skills-breakdown {
@@ -650,6 +752,53 @@ a.connection-name:hover {
   background: #f3f4f6;
   border-color: #9ca3af;
   color: #6b7280;
+}
+
+.skill-chip {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+
+.skill-chip:hover {
+  opacity: 0.7;
+}
+
+.skill-chip-remove {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-size: 0.65rem;
+  line-height: 1;
+  opacity: 0.55;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.skill-chip-remove:hover {
+  opacity: 1;
+}
+
+.skill-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.skill-add-input {
+  max-width: 200px;
+  width: auto !important;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 0.8rem;
 }
 
 /* ── Cover letter edit mode ── */
