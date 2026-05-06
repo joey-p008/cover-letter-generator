@@ -1,0 +1,16 @@
+# Environment — never commit API keys
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Vite build output and cache
+client/dist/
+client/node_modules/.vite/
+
+# macOS
+.DS_Store

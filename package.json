@@ -1,0 +1,9 @@
+{
+  "name": "cover-letter-generator",
+  "version": "1.0.0",
+  "scripts": {
+    "server": "cd server && node index.js",
+    "client": "cd client && npm run dev",
+    "start": "echo \"Run 'npm run server' in one terminal and 'npm run client' in another\""
+  }
+}
