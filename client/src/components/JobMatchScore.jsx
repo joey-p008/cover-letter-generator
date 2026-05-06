@@ -111,7 +111,7 @@ export default function JobMatchScore({ status, result, error }) {
           </div>
         )}
 
-        {skillsBreakdown && (skillsBreakdown.matched.length > 0 || skillsBreakdown.missing.length > 0) && (
+        {skillsBreakdown && (skillsBreakdown.matched.length > 0 || skillsBreakdown.missing.length > 0 || (skillsBreakdown.bonusMatched || []).length > 0 || (skillsBreakdown.bonusMissing || []).length > 0) && (
           <div className="skills-breakdown">
             <p className="job-data-title">Skills breakdown</p>
             {skillsBreakdown.matched.length > 0 && (
@@ -130,6 +130,26 @@ export default function JobMatchScore({ status, result, error }) {
                 <div className="job-data-grid">
                   {skillsBreakdown.missing.map(s => (
                     <span key={s} className="job-tag skill-missing">✗ {s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(skillsBreakdown.bonusMatched || []).length > 0 && (
+              <div className="skills-group">
+                <p className="skills-group-label">Bonus — you have ({skillsBreakdown.bonusMatched.length})</p>
+                <div className="job-data-grid">
+                  {skillsBreakdown.bonusMatched.map(s => (
+                    <span key={s} className="job-tag skill-bonus-matched">✓ {s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(skillsBreakdown.bonusMissing || []).length > 0 && (
+              <div className="skills-group">
+                <p className="skills-group-label">Bonus — missing ({skillsBreakdown.bonusMissing.length})</p>
+                <div className="job-data-grid">
+                  {skillsBreakdown.bonusMissing.map(s => (
+                    <span key={s} className="job-tag skill-bonus-missing">◦ {s}</span>
                   ))}
                 </div>
               </div>

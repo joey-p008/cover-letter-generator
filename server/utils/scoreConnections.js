@@ -42,26 +42,48 @@ function companyMatches(csvCompany, targetCompany) {
   return false;
 }
 
-function scoreTitle(title) {
+function scoreFunctionRelevance(title, functionKeywords) {
+  if (!functionKeywords || functionKeywords.length === 0) return 15;
   const t = (title || '').toLowerCase();
-  if (/\b(chief|president|founder|co-founder|ceo|cto|cfo|coo|c[a-z]o)\b/.test(t)) return 95;
-  if (/\b(vp|vice president|svp|evp)\b/.test(t)) return 90;
-  if (/\bdirector\b/.test(t)) return 80;
-  if (/\b(head of|manager|lead)\b/.test(t)) return 70;
-  if (/\b(senior|staff|principal|sr\.?)\b/.test(t)) return 60;
-  return 40;
+  const matchCount = functionKeywords.filter(kw => t.includes(kw.toLowerCase())).length;
+  if (matchCount >= 2) return 60;
+  if (matchCount === 1) return 45;
+  return 15;
 }
 
-async function extractCompanyName(jobPostingText) {
+function scoreSeniority(title) {
+  const t = (title || '').toLowerCase();
+  if (/\b(chief|president|founder|co-founder|ceo|cto|cfo|coo|c[a-z]o)\b/.test(t)) return 40;
+  if (/\b(vp|vice president|svp|evp)\b/.test(t)) return 38;
+  if (/\bdirector\b/.test(t)) return 32;
+  if (/\b(head of|manager|lead)\b/.test(t)) return 26;
+  if (/\b(senior|staff|principal|sr\.?)\b/.test(t)) return 20;
+  return 15;
+}
+
+async function extractJobContext(jobPostingText) {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 30,
+    max_tokens: 100,
+    system: 'You are a job posting parser. Return ONLY valid JSON — no markdown, no fences, no explanation.',
     messages: [{
       role: 'user',
-      content: `Extract only the company name from this job posting. Return just the company name and nothing else.\n\n${jobPostingText}`,
+      content: `Extract the company name and the function/team keywords from this job posting.
+
+Return JSON matching exactly:
+{"company": string, "functionKeywords": string[]}
+
+functionKeywords: 3-6 short words or phrases describing the team/function (e.g. "engineering", "data science", "product", "marketing", "sales", "design", "finance", "recruiting"). These will be matched against job titles.
+
+JOB POSTING:
+${jobPostingText}`,
     }],
   });
-  return message.content[0].text.trim();
+  try {
+    return JSON.parse(message.content[0].text.trim());
+  } catch {
+    return { company: message.content[0].text.trim(), functionKeywords: [] };
+  }
 }
 
 async function scoreConnections(csvText, jobPostingText) {
@@ -89,7 +111,7 @@ async function scoreConnections(csvText, jobPostingText) {
     connectedOn: headers.findIndex(h => h.includes('connected')),
   };
 
-  const companyName = await extractCompanyName(jobPostingText);
+  const { company: companyName, functionKeywords } = await extractJobContext(jobPostingText);
 
   return lines
     .slice(headerIndex + 1)
@@ -110,7 +132,7 @@ async function scoreConnections(csvText, jobPostingText) {
         title,
         company:     f[idx.company]     || '',
         connectedOn: f[idx.connectedOn] || '',
-        score:       scoreTitle(title),
+        score:       scoreFunctionRelevance(title, functionKeywords) + scoreSeniority(title),
       };
     })
     .sort((a, b) => b.score - a.score);

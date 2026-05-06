@@ -23,7 +23,7 @@ Node.js 20.15.1 is in use. Both Vite and pdf-parse are pinned to versions compat
 Split client/server app. Three analyses run in parallel when the user clicks Generate:
 
 1. **Cover Letter** — resume + job posting → Claude Sonnet (streamed) → editable preview → `.docx`
-2. **Connections** — LinkedIn CSV + job posting → Haiku extracts company name → JS filters CSV → JS scores by title seniority
+2. **Connections** — LinkedIn CSV + job posting → Haiku extracts company + function keywords → JS filters CSV → JS scores by function relevance (primary) + seniority (secondary)
 3. **Job Match** — resume + job posting → Haiku extracts structured data → code scores 6 dimensions + skills gap
 
 Results appear in three tabs on the results screen. Each tab is independent; one failing doesn't block the others.
@@ -47,8 +47,8 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 - `utils/parseResume.js` — dispatches to `pdf-parse` (PDF) or `mammoth` (DOCX) by mimetype
 - `utils/generateLetter.js` — exports `streamLetter(resumeText, jobPostingText)`, an async generator that yields text chunks from `claude-sonnet-4-6` by iterating the stream and filtering `content_block_delta` events (SDK v0.95.0 does not expose `.textStream`); full system prompt with anti-fabrication + voice rules
 - `utils/createDocx.js` — positional line parser (line 1 = name 16pt bold, line 2 = contact 10pt, rest 11pt); 1-inch margins, Calibri, 1.15 line spacing
-- `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()`; uses `claude-haiku-4-5-20251001` (max_tokens: 30) to extract the company name, then does all matching and scoring in pure JS: `companyMatches()` filters rows, `scoreTitle()` assigns a seniority score (C-suite=95, VP=90, Director=80, Manager/Lead=70, Senior/Staff/Principal=60, other=40); no second Claude call, no JSON truncation risk
-- `utils/scoreJobMatch.js` — two parallel `claude-haiku-4-5-20251001` calls (job extraction + candidate extraction), then pure JS scoring; `scoreSkills()` returns `{ score, matched[], missing[] }` and the final result includes `skillsBreakdown: { matched, missing }`
+- `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()`; uses `claude-haiku-4-5-20251001` (max_tokens: 100) to extract `{ company, functionKeywords[] }` in one call, then pure JS: `companyMatches()` filters rows, score = `scoreFunctionRelevance(0–60)` + `scoreSeniority(0–40)`; function relevance is primary (2+ keyword matches in title=60, 1=45, 0=15), seniority is secondary (C-suite=40, VP=38, Director=32, Manager/Lead=26, Senior=20, other=15)
+- `utils/scoreJobMatch.js` — two parallel `claude-haiku-4-5-20251001` calls (job extraction + candidate extraction), then pure JS scoring; `extractJobData` returns `requiredSkills[]`, `preferredSkills[]`, `bonusSkills[]` (all technical-only); `scoreSkills()` scores against required+preferred only, returns `{ score, matched[], missing[], bonusMatched[], bonusMissing[] }`; bonus skills appear in the UI but are excluded from the score; final result includes `skillsBreakdown: { matched, missing, bonusMatched, bonusMissing }`
 
 **SSE streaming for cover letter:** `routes/generate.js` sets `Content-Type: text/event-stream` after validating inputs, then pipes chunks from `streamLetter` as `data: {"type":"chunk","text":"..."}` events. When the full text is assembled it creates the DOCX and sends a final `data: {"type":"done","docxBase64":"...","filename":"..."}` event. Validation errors before streaming starts are returned as normal JSON with a 4xx/5xx status. Errors mid-stream are sent as `data: {"type":"error","error":"..."}`.
 
@@ -71,14 +71,14 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 - `components/ResultTabs.jsx` — tab navigation bar
 - `components/CoverLetterPreview.jsx` — handles `loading`, `streaming` (live text + cursor), `success` (letter + Edit + Download buttons), and `error` states; edit mode shows a full-height textarea; downloading an edited letter POSTs to `/api/generate/docx`
 - `components/ConnectionsList.jsx` — ranked connection cards with score badges; handles no-csv/empty/error states
-- `components/JobMatchScore.jsx` — score circle + breakdown table + skills gap section (green ✓ chips for matched skills, red ✗ chips for missing skills)
+- `components/JobMatchScore.jsx` — score circle + breakdown table + skills gap section (green ✓ matched, red ✗ missing, amber ✓ bonus-matched, gray ◦ bonus-missing)
 
 ## Job match scoring rules
 
 All scoring in `utils/scoreJobMatch.js` — no Claude involvement after extraction:
 
 - **Experience (25%)**: lookup table by seniority rank difference (Entry=0 → Director=6); exact match=100, ±1 level = 85/70, ±2 = 60/40, ±3+ = 15
-- **Skills (30%)**: `(fuzzy-matched required skills) / (total required skills) * 100`; returns matched/missing lists for UI display
+- **Skills (30%)**: `(fuzzy-matched required + preferred skills) / (total required + preferred skills) * 100`; bonus skills are shown in UI only and excluded from the score
 - **Salary (20%)**: `<$60K` → linear 0–40; `$60K–$80K` → 100; `$80K–$160K` → linear 100–20; `>$160K` → 20. Uses midpoint of range.
 - **Location (15%)**: SF Bay Area + Remote = 100; CA/NYC/Seattle/Austin = 60; anywhere else = 20
 - **Recency (5%)**: ≤3 days=90, ≤7=80, ≤14=60, ≤30=40, older=20

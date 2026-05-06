@@ -23,21 +23,37 @@ function scoreExperience(candidateLevel, requiredLevel) {
   return 15;
 }
 
-function scoreSkills(candidateSkills, requiredSkills) {
-  if (!requiredSkills || requiredSkills.length === 0) return { score: null, matched: [], missing: [] };
-  if (!candidateSkills || candidateSkills.length === 0) return { score: 0, matched: [], missing: [...requiredSkills] };
-  const normalized = candidateSkills.map(s => s.toLowerCase().trim());
+function skillMatches(candidateNormalized, skill) {
+  const r = skill.toLowerCase().trim();
+  return candidateNormalized.some(c => c === r || c.includes(r) || r.includes(c));
+}
+
+function scoreSkills(candidateSkills, requiredSkills, preferredSkills, bonusSkills) {
+  const scoredSkills = [...(requiredSkills || []), ...(preferredSkills || [])];
+  const bonus = bonusSkills || [];
+
+  if (scoredSkills.length === 0) {
+    return { score: null, matched: [], missing: [], bonusMatched: [], bonusMissing: bonus };
+  }
+
+  const normalized = (candidateSkills || []).map(s => s.toLowerCase().trim());
+
   const matched = [];
   const missing = [];
-  for (const req of requiredSkills) {
-    const r = req.toLowerCase().trim();
-    if (normalized.some(c => c === r || c.includes(r) || r.includes(c))) {
-      matched.push(req);
-    } else {
-      missing.push(req);
-    }
+  for (const skill of scoredSkills) {
+    if (skillMatches(normalized, skill)) matched.push(skill);
+    else missing.push(skill);
   }
-  return { score: Math.round((matched.length / requiredSkills.length) * 100), matched, missing };
+
+  const bonusMatched = [];
+  const bonusMissing = [];
+  for (const skill of bonus) {
+    if (skillMatches(normalized, skill)) bonusMatched.push(skill);
+    else bonusMissing.push(skill);
+  }
+
+  const score = normalized.length === 0 ? 0 : Math.round((matched.length / scoredSkills.length) * 100);
+  return { score, matched, missing, bonusMatched, bonusMissing };
 }
 
 function scoreSalary(salaryMin, salaryMax) {
@@ -128,11 +144,13 @@ function computeOverall(scores) {
 async function extractJobData(jobPostingText) {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 512,
+    max_tokens: 700,
     system: `You are a job posting parser. Extract structured information. Return ONLY valid JSON matching this schema — no markdown, no fences, no explanation:
 {
   "experienceLevel": string | null,
   "requiredSkills": string[],
+  "preferredSkills": string[],
+  "bonusSkills": string[],
   "salaryMin": number | null,
   "salaryMax": number | null,
   "location": string | null,
@@ -141,6 +159,10 @@ async function extractJobData(jobPostingText) {
   "applicantCount": number | null
 }
 experienceLevel must be one of: Entry, Junior, Mid, Senior, Staff, Principal, Director — or null.
+requiredSkills: technical skills from the "Required Qualifications" section only (tools, languages, frameworks, platforms — no soft skills like "communication" or "teamwork").
+preferredSkills: technical skills from the "Preferred Qualifications" section only (same rule — technical only).
+bonusSkills: technical skills from any "Bonus", "Nice to have", or "Plus" section only (same rule — technical only).
+If the posting does not use separate sections, put all technical skills in requiredSkills and leave preferredSkills and bonusSkills empty.
 salaryMin/salaryMax in USD per year (annualize if hourly).
 datePosted as ISO 8601 (YYYY-MM-DD) or null.
 Only extract what is explicitly stated — do not guess.`,
@@ -173,7 +195,12 @@ async function scoreJobMatch(resumeText, jobPostingText) {
     extractCandidateData(resumeText),
   ]);
 
-  const skillsResult = scoreSkills(candidateData.skills, jobData.requiredSkills);
+  const skillsResult = scoreSkills(
+    candidateData.skills,
+    jobData.requiredSkills,
+    jobData.preferredSkills,
+    jobData.bonusSkills,
+  );
 
   const scores = {
     experience: scoreExperience(candidateData.experienceLevel, jobData.experienceLevel),
@@ -200,7 +227,12 @@ async function scoreJobMatch(resumeText, jobPostingText) {
     breakdown,
     jobData,
     candidateData,
-    skillsBreakdown: { matched: skillsResult.matched, missing: skillsResult.missing },
+    skillsBreakdown: {
+      matched: skillsResult.matched,
+      missing: skillsResult.missing,
+      bonusMatched: skillsResult.bonusMatched,
+      bonusMissing: skillsResult.bonusMissing,
+    },
   };
 }
 
