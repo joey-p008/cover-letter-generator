@@ -145,7 +145,7 @@ async function extractJobData(jobPostingText) {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 700,
-    system: `You are a job posting parser. Extract structured information. Return ONLY valid JSON matching this schema — no markdown, no fences, no explanation:
+    system: `You are a job posting parser following the JOBSCRAPER skill rules. Extract structured information. Return ONLY valid JSON matching this schema — no markdown, no fences, no explanation:
 {
   "experienceLevel": string | null,
   "requiredSkills": string[],
@@ -158,11 +158,20 @@ async function extractJobData(jobPostingText) {
   "datePosted": string | null,
   "applicantCount": number | null
 }
+
 experienceLevel must be one of: Entry, Junior, Mid, Senior, Staff, Principal, Director — or null.
-requiredSkills: technical skills from the "Required Qualifications" section only (tools, languages, frameworks, platforms — no soft skills like "communication" or "teamwork").
-preferredSkills: technical skills from the "Preferred Qualifications" section only (same rule — technical only).
-bonusSkills: technical skills from any "Bonus", "Nice to have", or "Plus" section only (same rule — technical only).
-If the posting does not use separate sections, put all technical skills in requiredSkills and leave preferredSkills and bonusSkills empty.
+
+Skill extraction rules (apply to all three skill arrays):
+- Extract ONLY hard skills: programming languages, frameworks, tools, platforms, cloud services, databases, certifications, analytical methods, domain-specific technologies.
+- DO NOT extract soft skills or personality traits (e.g. "communication", "team player", "fast learner", "motivated").
+- Normalize technology names (e.g. "MS Excel" → "Excel", "Amazon Web Services" → "AWS").
+- Each skill appears in exactly one array — no duplicates across arrays.
+
+requiredSkills: skills from "Required", "Must have", "Minimum qualifications", "Mandatory", or "Need to have" sections.
+preferredSkills: skills from "Preferred", "Nice to have", "Ideal candidate", "Desired", or "Plus" sections.
+bonusSkills: skills from "Bonus", indirectly referenced adjacent tools, optional certifications, or domain familiarity not listed in required/preferred.
+If the posting has no separate sections, put all technical skills in requiredSkills.
+
 salaryMin/salaryMax in USD per year (annualize if hourly).
 datePosted as ISO 8601 (YYYY-MM-DD) or null.
 Only extract what is explicitly stated — do not guess.`,
