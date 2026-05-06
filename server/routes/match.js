@@ -6,7 +6,7 @@ const { scoreJobMatch } = require('../utils/scoreJobMatch');
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post('/', upload.fields([{ name: 'resume', maxCount: 1 }]), async (req, res) => {
+router.post('/', upload.fields([{ name: 'resume', maxCount: 1 }, { name: 'linkedinCsv', maxCount: 1 }]), async (req, res) => {
   try {
     const resumeFile = req.files?.resume?.[0];
     const jobPosting = req.body?.jobPosting?.trim();

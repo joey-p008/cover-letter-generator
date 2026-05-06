@@ -5,7 +5,7 @@ const { scoreConnections } = require('../utils/scoreConnections');
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post('/', upload.fields([{ name: 'linkedinCsv', maxCount: 1 }]), async (req, res) => {
+router.post('/', upload.fields([{ name: 'resume', maxCount: 1 }, { name: 'linkedinCsv', maxCount: 1 }]), async (req, res) => {
   try {
     const csvFile = req.files?.linkedinCsv?.[0];
     const jobPosting = req.body?.jobPosting?.trim();
