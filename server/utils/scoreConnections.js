@@ -120,17 +120,6 @@ async function scoreConnections(csvText, jobPostingText) {
 
   const { company: companyName, functionKeywords } = await extractJobContext(jobPostingText);
 
-  const normalizedTarget = normalizeCompany(companyName);
-  console.log(`[connections] extracted company: "${companyName}" → normalized: "${normalizedTarget}"`);
-
-  const allCompanies = lines
-    .slice(headerIndex + 1)
-    .filter(line => line.trim())
-    .map(line => parseCSVRow(line)[idx.company] || '')
-    .filter(Boolean);
-  const uniqueCompanies = [...new Set(allCompanies)].slice(0, 10);
-  console.log(`[connections] sample CSV companies:`, uniqueCompanies.map(c => `"${c}" → "${normalizeCompany(c)}"`));
-
   return lines
     .slice(headerIndex + 1)
     .filter(line => line.trim())
