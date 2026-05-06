@@ -23,7 +23,7 @@ Node.js 20.15.1 is in use. Both Vite and pdf-parse are pinned to versions compat
 Split client/server app. Three analyses run in parallel when the user clicks Generate:
 
 1. **Cover Letter** — resume + job posting → Claude Sonnet (streamed) → `.docx`
-2. **Connections** — LinkedIn CSV + job posting → Haiku extracts company name → JS filters CSV → Sonnet scores matches
+2. **Connections** — LinkedIn CSV + job posting → Haiku extracts company name → JS filters CSV → JS scores by title seniority
 3. **Job Match** — resume + job posting → Haiku extracts structured data → code scores 6 dimensions
 
 Results appear in three tabs on the results screen. Each tab is independent; one failing doesn't block the others.
@@ -41,9 +41,9 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 
 **Utilities:**
 - `utils/parseResume.js` — dispatches to `pdf-parse` (PDF) or `mammoth` (DOCX) by mimetype
-- `utils/generateLetter.js` — exports `streamLetter(resumeText, jobPostingText)`, an async generator that yields text chunks from `claude-sonnet-4-6` via the SDK's `textStream`; full system prompt with anti-fabrication + voice rules
+- `utils/generateLetter.js` — exports `streamLetter(resumeText, jobPostingText)`, an async generator that yields text chunks from `claude-sonnet-4-6` by iterating the stream and filtering `content_block_delta` events (SDK v0.95.0 does not expose `.textStream`); full system prompt with anti-fabrication + voice rules
 - `utils/createDocx.js` — positional line parser (line 1 = name 16pt bold, line 2 = contact 10pt, rest 11pt); 1-inch margins, Calibri, 1.15 line spacing
-- `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()`; uses `claude-haiku-4-5-20251001` (max_tokens: 30) to extract the company name from the job posting, then filters the CSV in JS with `companyMatches()` before sending only matching rows to `claude-sonnet-4-6` for relevance scoring; returns JSON array with `linkedinUrl` included
+- `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()`; uses `claude-haiku-4-5-20251001` (max_tokens: 30) to extract the company name, then does all matching and scoring in pure JS: `companyMatches()` filters rows, `scoreTitle()` assigns a seniority score (C-suite=95, VP=90, Director=80, Manager/Lead=70, Senior/Staff/Principal=60, other=40); no second Claude call, no JSON truncation risk
 - `utils/scoreJobMatch.js` — two parallel `claude-haiku-4-5-20251001` calls (job extraction + candidate extraction), then pure JS scoring functions for all 6 dimensions
 
 **SSE streaming for cover letter:** `routes/generate.js` sets `Content-Type: text/event-stream` after validating inputs, then pipes chunks from `streamLetter` as `data: {"type":"chunk","text":"..."}` events. When the full text is assembled it creates the DOCX and sends a final `data: {"type":"done","docxBase64":"...","filename":"..."}` event. Validation errors before streaming starts are returned as normal JSON with a 4xx/5xx status. Errors mid-stream are sent as `data: {"type":"error","error":"..."}`.
