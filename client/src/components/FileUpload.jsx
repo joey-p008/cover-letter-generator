@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 
-function DropZone({ label, accept, file, onFile, hint }) {
+function DropZone({ label, accept, file, onFile, onClear, hint }) {
   const inputRef = useRef(null);
 
   function handleDrop(e) {
@@ -26,7 +26,15 @@ function DropZone({ label, accept, file, onFile, hint }) {
       <div className="drop-zone-icon">+</div>
       <div className="drop-zone-label">{label}</div>
       {file ? (
-        <div className="drop-zone-file">{file.name}</div>
+        <div className="drop-zone-file-row" onClick={e => e.stopPropagation()}>
+          <div className="drop-zone-file">{file.name}</div>
+          <button
+            type="button"
+            className="drop-zone-clear"
+            onClick={onClear}
+            title="Remove file"
+          >✕</button>
+        </div>
       ) : (
         <div className="drop-zone-hint">{hint}</div>
       )}
@@ -34,7 +42,10 @@ function DropZone({ label, accept, file, onFile, hint }) {
   );
 }
 
-export default function FileUpload({ resumeFile, setResumeFile, linkedinFile, setLinkedinFile }) {
+export default function FileUpload({
+  resumeFile, onResumeFile, onClearResume,
+  linkedinFile, onLinkedinFile, onClearLinkedin,
+}) {
   return (
     <div className="file-upload-row">
       <div className="file-upload-col">
@@ -43,7 +54,8 @@ export default function FileUpload({ resumeFile, setResumeFile, linkedinFile, se
           label="Upload Resume"
           accept=".pdf,.doc,.docx"
           file={resumeFile}
-          onFile={setResumeFile}
+          onFile={onResumeFile}
+          onClear={onClearResume}
           hint="PDF or Word (.pdf, .docx)"
         />
       </div>
@@ -55,7 +67,8 @@ export default function FileUpload({ resumeFile, setResumeFile, linkedinFile, se
           label="Upload Connections CSV"
           accept=".csv"
           file={linkedinFile}
-          onFile={setLinkedinFile}
+          onFile={onLinkedinFile}
+          onClear={onClearLinkedin}
           hint="Export from LinkedIn > Connections"
         />
       </div>

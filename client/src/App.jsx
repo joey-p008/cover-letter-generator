@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import FileUpload from './components/FileUpload';
 import JobPostingInput from './components/JobPostingInput';
 import CoverLetterPreview from './components/CoverLetterPreview';
 import ConnectionsList from './components/ConnectionsList';
 import JobMatchScore from './components/JobMatchScore';
 import ResultTabs from './components/ResultTabs';
+import { saveFile, loadFile, clearFile } from './utils/fileStorage';
 import './App.css';
 
 export default function App() {
@@ -12,7 +13,10 @@ export default function App() {
   const [resumeFile, setResumeFile] = useState(null);
   const [linkedinFile, setLinkedinFile] = useState(null);
   const [jobPosting, setJobPosting] = useState('');
+  const [jobPostingMode, setJobPostingMode] = useState('text');
+  const [jobPostingUrl, setJobPostingUrl] = useState('');
   const [formError, setFormError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Results view
   const [isResultsView, setIsResultsView] = useState(false);
@@ -20,6 +24,39 @@ export default function App() {
   const [letterResult, setLetterResult] = useState(null);
   const [connectionsResult, setConnectionsResult] = useState(null);
   const [matchResult, setMatchResult] = useState(null);
+
+  // Load persisted files on mount
+  useEffect(() => {
+    Promise.all([
+      loadFile('resume').catch(() => null),
+      loadFile('linkedin').catch(() => null),
+    ]).then(([resume, linkedin]) => {
+      if (resume) setResumeFile(resume);
+      if (linkedin) setLinkedinFile(linkedin);
+    });
+  }, []);
+
+  // ── File handlers (persist to IndexedDB) ──────────────────────────────────
+
+  function handleResumeFile(file) {
+    setResumeFile(file);
+    if (file) saveFile('resume', file).catch(console.error);
+  }
+
+  function handleLinkedinFile(file) {
+    setLinkedinFile(file);
+    if (file) saveFile('linkedin', file).catch(console.error);
+  }
+
+  function handleClearResume() {
+    setResumeFile(null);
+    clearFile('resume').catch(console.error);
+  }
+
+  function handleClearLinkedin() {
+    setLinkedinFile(null);
+    clearFile('linkedin').catch(console.error);
+  }
 
   // ── Individual fetch helpers ───────────────────────────────────────────────
 
@@ -98,26 +135,52 @@ export default function App() {
 
   // ── Submit ─────────────────────────────────────────────────────────────────
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setFormError('');
     if (!resumeFile) return setFormError('Please upload your resume.');
-    if (!jobPosting.trim()) return setFormError('Please paste the job posting.');
 
-    // Build a single FormData shared across all three requests
+    let resolvedJobPosting = '';
+
+    if (jobPostingMode === 'url') {
+      if (!jobPostingUrl.trim()) return setFormError('Please enter a job posting URL.');
+      setIsSubmitting(true);
+      try {
+        const res = await fetch('/api/fetch-job', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: jobPostingUrl.trim() }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setFormError(body.error || 'Failed to fetch the job posting. Try pasting the text instead.');
+          setIsSubmitting(false);
+          return;
+        }
+        const { jobText } = await res.json();
+        resolvedJobPosting = jobText;
+      } catch {
+        setFormError('Failed to fetch the job posting. Check the URL and try again.');
+        setIsSubmitting(false);
+        return;
+      }
+      setIsSubmitting(false);
+    } else {
+      if (!jobPosting.trim()) return setFormError('Please paste the job posting.');
+      resolvedJobPosting = jobPosting;
+    }
+
     const form = new FormData();
     form.append('resume', resumeFile);
     if (linkedinFile) form.append('linkedinCsv', linkedinFile);
-    form.append('jobPosting', jobPosting);
+    form.append('jobPosting', resolvedJobPosting);
 
-    // Switch to results view immediately
     setIsResultsView(true);
     setActiveTab('letter');
     setLetterResult({ status: 'loading' });
     setConnectionsResult(linkedinFile ? { status: 'loading' } : { status: 'no-csv' });
     setMatchResult({ status: 'loading' });
 
-    // Fire all three in parallel — each updates its own state slice
     fetchLetter(form);
     if (linkedinFile) fetchConnections(form);
     fetchMatch(form);
@@ -129,9 +192,9 @@ export default function App() {
     setLetterResult(null);
     setConnectionsResult(null);
     setMatchResult(null);
-    setResumeFile(null);
-    setLinkedinFile(null);
+    // Resume and LinkedIn files are intentionally kept — persists across sessions
     setJobPosting('');
+    setJobPostingUrl('');
     setFormError('');
   }
 
@@ -195,14 +258,27 @@ export default function App() {
         <form className="form-card" onSubmit={handleSubmit}>
           <FileUpload
             resumeFile={resumeFile}
-            setResumeFile={setResumeFile}
+            onResumeFile={handleResumeFile}
+            onClearResume={handleClearResume}
             linkedinFile={linkedinFile}
-            setLinkedinFile={setLinkedinFile}
+            onLinkedinFile={handleLinkedinFile}
+            onClearLinkedin={handleClearLinkedin}
           />
-          <JobPostingInput value={jobPosting} onChange={setJobPosting} />
+          <JobPostingInput
+            mode={jobPostingMode}
+            onModeChange={setJobPostingMode}
+            value={jobPosting}
+            onChange={setJobPosting}
+            urlValue={jobPostingUrl}
+            onUrlChange={setJobPostingUrl}
+          />
           {formError && <div className="error-msg">{formError}</div>}
-          <button className="btn btn-primary btn-submit" type="submit">
-            Generate
+          <button
+            className="btn btn-primary btn-submit"
+            type="submit"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Fetching job posting…' : 'Generate'}
           </button>
         </form>
       </main>

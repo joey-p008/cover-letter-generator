@@ -24,15 +24,20 @@ function scoreExperience(candidateLevel, requiredLevel) {
 }
 
 function scoreSkills(candidateSkills, requiredSkills) {
-  if (!requiredSkills || requiredSkills.length === 0) return null;
-  if (!candidateSkills || candidateSkills.length === 0) return 0;
+  if (!requiredSkills || requiredSkills.length === 0) return { score: null, matched: [], missing: [] };
+  if (!candidateSkills || candidateSkills.length === 0) return { score: 0, matched: [], missing: [...requiredSkills] };
   const normalized = candidateSkills.map(s => s.toLowerCase().trim());
-  let matches = 0;
+  const matched = [];
+  const missing = [];
   for (const req of requiredSkills) {
     const r = req.toLowerCase().trim();
-    if (normalized.some(c => c === r || c.includes(r) || r.includes(c))) matches++;
+    if (normalized.some(c => c === r || c.includes(r) || r.includes(c))) {
+      matched.push(req);
+    } else {
+      missing.push(req);
+    }
   }
-  return Math.round((matches / requiredSkills.length) * 100);
+  return { score: Math.round((matched.length / requiredSkills.length) * 100), matched, missing };
 }
 
 function scoreSalary(salaryMin, salaryMax) {
@@ -168,9 +173,11 @@ async function scoreJobMatch(resumeText, jobPostingText) {
     extractCandidateData(resumeText),
   ]);
 
+  const skillsResult = scoreSkills(candidateData.skills, jobData.requiredSkills);
+
   const scores = {
     experience: scoreExperience(candidateData.experienceLevel, jobData.experienceLevel),
-    skills: scoreSkills(candidateData.skills, jobData.requiredSkills),
+    skills: skillsResult.score,
     salary: scoreSalary(jobData.salaryMin, jobData.salaryMax),
     location: scoreLocation(jobData.location, jobData.isRemote),
     recency: scoreRecency(jobData.datePosted),
@@ -188,7 +195,13 @@ async function scoreJobMatch(resumeText, jobPostingText) {
     };
   }
 
-  return { overall, breakdown, jobData, candidateData };
+  return {
+    overall,
+    breakdown,
+    jobData,
+    candidateData,
+    skillsBreakdown: { matched: skillsResult.matched, missing: skillsResult.missing },
+  };
 }
 
 module.exports = { scoreJobMatch };

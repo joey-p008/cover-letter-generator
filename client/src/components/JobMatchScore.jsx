@@ -40,7 +40,7 @@ export default function JobMatchScore({ status, result, error }) {
 
   if (!result) return null;
 
-  const { overall, breakdown } = result;
+  const { overall, breakdown, skillsBreakdown } = result;
   const cls = scoreClass(overall);
   const label = overall >= 70 ? 'Strong fit' : overall >= 40 ? 'Potential fit' : 'Weak fit';
 
@@ -107,10 +107,33 @@ export default function JobMatchScore({ status, result, error }) {
               )}
               {result.jobData.datePosted && <span className="job-tag">Posted {result.jobData.datePosted}</span>}
               {result.jobData.applicantCount !== null && <span className="job-tag">{result.jobData.applicantCount} applicants</span>}
-              {result.jobData.requiredSkills?.length > 0 && (
-                <span className="job-tag">{result.jobData.requiredSkills.length} required skills</span>
-              )}
             </div>
+          </div>
+        )}
+
+        {skillsBreakdown && (skillsBreakdown.matched.length > 0 || skillsBreakdown.missing.length > 0) && (
+          <div className="skills-breakdown">
+            <p className="job-data-title">Skills breakdown</p>
+            {skillsBreakdown.matched.length > 0 && (
+              <div className="skills-group">
+                <p className="skills-group-label">You have ({skillsBreakdown.matched.length})</p>
+                <div className="job-data-grid">
+                  {skillsBreakdown.matched.map(s => (
+                    <span key={s} className="job-tag skill-matched">✓ {s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {skillsBreakdown.missing.length > 0 && (
+              <div className="skills-group">
+                <p className="skills-group-label">Missing ({skillsBreakdown.missing.length})</p>
+                <div className="job-data-grid">
+                  {skillsBreakdown.missing.map(s => (
+                    <span key={s} className="job-tag skill-missing">✗ {s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
