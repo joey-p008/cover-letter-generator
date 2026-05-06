@@ -71,16 +71,16 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 - `components/ResultTabs.jsx` — tab navigation bar
 - `components/CoverLetterPreview.jsx` — handles `loading`, `streaming` (live text + cursor), `success` (letter + Edit + Download buttons), and `error` states; edit mode shows a full-height textarea; downloading an edited letter POSTs to `/api/generate/docx`
 - `components/ConnectionsList.jsx` — ranked connection cards with score badges; handles no-csv/empty/error states
-- `components/JobMatchScore.jsx` — score circle + breakdown table + skills gap section (green ✓ matched, red ✗ missing, amber ✓ bonus-matched, gray ◦ bonus-missing)
+- `components/JobMatchScore.jsx` — score circle + live-editable job details form + interactive skills breakdown; all 6 dimension scores recompute instantly on the client using `utils/scoreJobMatch.js` (pure functions, no API call); an "Edited" badge appears when the live score differs from the original extraction; skill chips are clickable to toggle you-have ↔ missing, deletable with ✕, and new skills can be added via the Add input
 
 ## Job match scoring rules
 
-All scoring in `utils/scoreJobMatch.js` — no Claude involvement after extraction:
+Scoring functions live in **both** `server/utils/scoreJobMatch.js` (used for initial extraction) and `client/src/utils/scoreJobMatch.js` (used for live client-side recomputation when the user edits). Keep them in sync when rules change.
 
 - **Experience (25%)**: lookup table by seniority rank difference (Entry=0 → Director=6); exact match=100, ±1 level = 85/70, ±2 = 60/40, ±3+ = 15
-- **Skills (30%)**: `(fuzzy-matched required + preferred skills) / (total required + preferred skills) * 100`; bonus skills are shown in UI only and excluded from the score
+- **Skills (30%)**: server uses fuzzy matching against required+preferred; client uses toggled chip state directly: `matched / (matched + missing) * 100`; bonus skills shown in UI only, excluded from score
 - **Salary (20%)**: `<$60K` → linear 0–40; `$60K–$80K` → 100; `$80K–$160K` → linear 100–20; `>$160K` → 20. Uses midpoint of range.
-- **Location (15%)**: SF Bay Area + Remote = 100; CA/NYC/Seattle/Austin = 60; anywhere else = 20
+- **Location (15%)**: SF Bay Area (comprehensive city list) + Remote = 100; LA/NYC/Seattle/Austin/San Diego/Sacramento = 60; anywhere else = 20
 - **Recency (5%)**: ≤3 days=90, ≤7=80, ≤14=60, ≤30=40, older=20
 - **Competitiveness (5%)**: <10 applicants=100, ≤50=80, ≤100=60, ≤200=40, >200=20
 - Missing dimensions are skipped and remaining weights re-normalized
