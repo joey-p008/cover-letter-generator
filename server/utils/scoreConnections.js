@@ -11,10 +11,6 @@ function findHeaderRowIndex(lines) {
   });
 }
 
-function stripJsonFences(text) {
-  return text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-}
-
 function parseCSVRow(line) {
   const result = [];
   let current = '';
@@ -22,12 +18,8 @@ function parseCSVRow(line) {
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
     } else if (char === ',' && !inQuotes) {
       result.push(current.trim().replace(/^"|"$/g, ''));
       current = '';
@@ -44,11 +36,20 @@ function companyMatches(csvCompany, targetCompany) {
   const target = targetCompany.toLowerCase().trim();
   if (!csv || !target || target.length < 2) return false;
   if (csv.includes(target) || target.includes(csv)) return true;
-  // Match on first significant word to handle "Stripe" vs "Stripe, Inc."
   const csvFirst = csv.split(/[\s,.(]/)[0];
   const targetFirst = target.split(/[\s,.(]/)[0];
   if (targetFirst.length >= 3 && (csv.includes(targetFirst) || targetFirst.includes(csvFirst))) return true;
   return false;
+}
+
+function scoreTitle(title) {
+  const t = (title || '').toLowerCase();
+  if (/\b(chief|president|founder|co-founder|ceo|cto|cfo|coo|c[a-z]o)\b/.test(t)) return 95;
+  if (/\b(vp|vice president|svp|evp)\b/.test(t)) return 90;
+  if (/\bdirector\b/.test(t)) return 80;
+  if (/\b(head of|manager|lead)\b/.test(t)) return 70;
+  if (/\b(senior|staff|principal|sr\.?)\b/.test(t)) return 60;
+  return 40;
 }
 
 async function extractCompanyName(jobPostingText) {
@@ -77,69 +78,42 @@ async function scoreConnections(csvText, jobPostingText) {
 
   const headerLine = lines[headerIndex];
   const headers = parseCSVRow(headerLine).map(h => h.toLowerCase().trim());
-  const companyIdx = headers.findIndex(h => h === 'company');
 
-  // Extract company name with Haiku (fast, cheap), then filter CSV in JS
+  const idx = {
+    firstName:   headers.findIndex(h => h.includes('first')),
+    lastName:    headers.findIndex(h => h.includes('last')),
+    company:     headers.findIndex(h => h === 'company'),
+    position:    headers.findIndex(h => h === 'position'),
+    linkedinUrl: headers.findIndex(h => h.includes('linkedin') || h.includes('url')),
+    email:       headers.findIndex(h => h.includes('email')),
+    connectedOn: headers.findIndex(h => h.includes('connected')),
+  };
+
   const companyName = await extractCompanyName(jobPostingText);
 
-  const dataLines = lines.slice(headerIndex + 1).filter(line => line.trim());
-  const matchingLines = companyIdx === -1
-    ? dataLines
-    : dataLines.filter(line => {
-        const fields = parseCSVRow(line);
-        return companyMatches(fields[companyIdx] || '', companyName);
-      });
-
-  if (matchingLines.length === 0) return [];
-
-  // Only send the matching rows to Claude for relevance scoring
-  const filteredCsv = [headerLine, ...matchingLines].join('\n');
-
-  const system = `You are a professional networking advisor. You will be given a small list of LinkedIn connections (as CSV) who all work at the target company, and a job posting.
-
-The CSV columns are: First Name, Last Name, LinkedIn URL, Email Address, Company, Position, Connected On.
-
-Your task: For each connection, score their relevance to the role on a scale of 0–100 using these criteria:
-   - Title similarity to the job role (0–40 pts): same function (engineering, product, design, etc.)? Peer, manager, or adjacent team member?
-   - Seniority match (0–30 pts): could they influence hiring? Senior ICs, managers, directors, and VPs in the relevant function score highest.
-   - Department/team alignment (0–30 pts): same or closely related department scores highest; unrelated departments score low.
-
-OUTPUT RULES:
-- Return ONLY a valid JSON array. No markdown, no code fences, no explanation.
-- Sort by score descending.
-
-JSON schema for each element:
-{
-  "firstName": string,
-  "lastName": string,
-  "email": string,
-  "linkedinUrl": string,
-  "title": string,
-  "company": string,
-  "connectedOn": string,
-  "score": number,
-  "rationale": string
-}`;
-
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system,
-    messages: [
-      {
-        role: 'user',
-        content: `JOB POSTING:\n${jobPostingText}\n\nLINKEDIN CONNECTIONS AT THE COMPANY:\n${filteredCsv}\n\nReturn the JSON array now.`,
-      },
-    ],
-  });
-
-  const raw = stripJsonFences(message.content[0].text);
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new Error('Failed to parse connections response from Claude. Raw: ' + raw.slice(0, 200));
-  }
+  return lines
+    .slice(headerIndex + 1)
+    .filter(line => line.trim())
+    .filter(line => {
+      if (idx.company === -1) return false;
+      const fields = parseCSVRow(line);
+      return companyMatches(fields[idx.company] || '', companyName);
+    })
+    .map(line => {
+      const f = parseCSVRow(line);
+      const title = f[idx.position] || '';
+      return {
+        firstName:   f[idx.firstName]   || '',
+        lastName:    f[idx.lastName]    || '',
+        email:       f[idx.email]       || '',
+        linkedinUrl: f[idx.linkedinUrl] || '',
+        title,
+        company:     f[idx.company]     || '',
+        connectedOn: f[idx.connectedOn] || '',
+        score:       scoreTitle(title),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 }
 
 module.exports = { scoreConnections };
