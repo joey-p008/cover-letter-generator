@@ -22,9 +22,9 @@ Node.js 20.15.1 is in use. Both Vite and pdf-parse are pinned to versions compat
 
 Split client/server app. Three analyses run in parallel when the user clicks Generate:
 
-1. **Cover Letter** — resume + job posting → Claude Sonnet (streamed) → `.docx`
+1. **Cover Letter** — resume + job posting → Claude Sonnet (streamed) → editable preview → `.docx`
 2. **Connections** — LinkedIn CSV + job posting → Haiku extracts company name → JS filters CSV → JS scores by title seniority
-3. **Job Match** — resume + job posting → Haiku extracts structured data → code scores 6 dimensions
+3. **Job Match** — resume + job posting → Haiku extracts structured data → code scores 6 dimensions + skills gap
 
 Results appear in three tabs on the results screen. Each tab is independent; one failing doesn't block the others.
 
@@ -32,19 +32,23 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 
 ## Server (`server/` — CommonJS, Express 5)
 
-**Routes** (all accept multipart via `multer` memory storage):
+**Routes** (all accept multipart via `multer` memory storage unless noted):
 - `routes/generate.js` — `POST /api/generate`: resume + jobPosting → **SSE stream** of text chunks, then a final `done` event carrying the DOCX as base64
+- `routes/generateDocx.js` — `POST /api/generate/docx`: JSON `{ letterText }` → regenerates DOCX from edited text; used when the user downloads after making edits in-app
 - `routes/connections.js` — `POST /api/connections`: linkedinCsv + jobPosting → `{ connections: [...] }`
-- `routes/match.js` — `POST /api/match`: resume + jobPosting → `{ overall, breakdown, jobData, candidateData }`
+- `routes/match.js` — `POST /api/match`: resume + jobPosting → `{ overall, breakdown, skillsBreakdown, jobData, candidateData }`
+- `routes/fetchJob.js` — `POST /api/fetch-job`: JSON `{ url }` → proxies through `r.jina.ai` to extract clean text from any job posting URL (handles JS-rendered pages like LinkedIn); returns `{ jobText }`
 
-**Multer gotcha:** The client sends one `FormData` with both `resume` and `linkedinCsv` to all three endpoints simultaneously. Every route must declare both fields in `upload.fields([...])` — if a route only declares one, multer throws `MulterError: Unexpected field` when the other arrives.
+**Route mount order matters:** `/api/generate/docx` is mounted before `/api/generate` in `index.js` so Express matches the more specific path first.
+
+**Multer gotcha:** The client sends one `FormData` with both `resume` and `linkedinCsv` to all three multipart endpoints simultaneously. Every route must declare both fields in `upload.fields([...])` — if a route only declares one, multer throws `MulterError: Unexpected field` when the other arrives.
 
 **Utilities:**
 - `utils/parseResume.js` — dispatches to `pdf-parse` (PDF) or `mammoth` (DOCX) by mimetype
 - `utils/generateLetter.js` — exports `streamLetter(resumeText, jobPostingText)`, an async generator that yields text chunks from `claude-sonnet-4-6` by iterating the stream and filtering `content_block_delta` events (SDK v0.95.0 does not expose `.textStream`); full system prompt with anti-fabrication + voice rules
 - `utils/createDocx.js` — positional line parser (line 1 = name 16pt bold, line 2 = contact 10pt, rest 11pt); 1-inch margins, Calibri, 1.15 line spacing
 - `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()`; uses `claude-haiku-4-5-20251001` (max_tokens: 30) to extract the company name, then does all matching and scoring in pure JS: `companyMatches()` filters rows, `scoreTitle()` assigns a seniority score (C-suite=95, VP=90, Director=80, Manager/Lead=70, Senior/Staff/Principal=60, other=40); no second Claude call, no JSON truncation risk
-- `utils/scoreJobMatch.js` — two parallel `claude-haiku-4-5-20251001` calls (job extraction + candidate extraction), then pure JS scoring functions for all 6 dimensions
+- `utils/scoreJobMatch.js` — two parallel `claude-haiku-4-5-20251001` calls (job extraction + candidate extraction), then pure JS scoring; `scoreSkills()` returns `{ score, matched[], missing[] }` and the final result includes `skillsBreakdown: { matched, missing }`
 
 **SSE streaming for cover letter:** `routes/generate.js` sets `Content-Type: text/event-stream` after validating inputs, then pipes chunks from `streamLetter` as `data: {"type":"chunk","text":"..."}` events. When the full text is assembled it creates the DOCX and sends a final `data: {"type":"done","docxBase64":"...","filename":"..."}` event. Validation errors before streaming starts are returned as normal JSON with a 4xx/5xx status. Errors mid-stream are sent as `data: {"type":"error","error":"..."}`.
 
@@ -56,23 +60,25 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 - `isResultsView` — switches between form and results layout
 - `activeTab` — `'letter' | 'connections' | 'match'`
 - `letterResult / connectionsResult / matchResult` — each has `{ status, ...data }` where status is `'loading' | 'streaming' | 'success' | 'error' | 'no-csv'`
+- `jobPostingMode` — `'text' | 'url'`; when `'url'`, `handleSubmit` calls `/api/fetch-job` first to resolve the text before firing the three parallel requests
+- `isSubmitting` — true while the URL fetch is in progress; disables the Generate button
+
+**File persistence (`utils/fileStorage.js`):** IndexedDB wrapper with `saveFile(key, file)`, `loadFile(key)`, `clearFile(key)`. On mount, `App.jsx` loads `'resume'` and `'linkedin'` keys and pre-populates state. Files are saved on every drop/select and deleted when the user clicks ✕. `handleReset` does NOT clear files — they persist across sessions.
 
 **Components:**
-- `components/FileUpload.jsx` — drag-and-drop for resume (required) + LinkedIn CSV (optional)
-- `components/JobPostingInput.jsx` — textarea for job description
+- `components/FileUpload.jsx` — drag-and-drop with ✕ clear buttons; calls `onResumeFile`/`onLinkedinFile`/`onClearResume`/`onClearLinkedin` props (parent handles IndexedDB)
+- `components/JobPostingInput.jsx` — "Paste text" / "From URL" toggle; text mode shows textarea, URL mode shows a single-line input
 - `components/ResultTabs.jsx` — tab navigation bar
-- `components/CoverLetterPreview.jsx` — handles `loading` (spinner), `streaming` (live text + blinking cursor + disabled download button), `success` (full letter + download), and `error` states
+- `components/CoverLetterPreview.jsx` — handles `loading`, `streaming` (live text + cursor), `success` (letter + Edit + Download buttons), and `error` states; edit mode shows a full-height textarea; downloading an edited letter POSTs to `/api/generate/docx`
 - `components/ConnectionsList.jsx` — ranked connection cards with score badges; handles no-csv/empty/error states
-- `components/JobMatchScore.jsx` — score circle + breakdown table with score bars; skips N/A dimensions
-
-**Cover letter streaming in `App.jsx`:** `fetchLetter` reads the SSE response body via `ReadableStream`, splits on `\n\n` boundaries, parses each `data:` event, and calls `setLetterResult` with `status: 'streaming'` on each chunk. The `done` event converts the base64 DOCX to a `Blob` and transitions to `status: 'success'`.
+- `components/JobMatchScore.jsx` — score circle + breakdown table + skills gap section (green ✓ chips for matched skills, red ✗ chips for missing skills)
 
 ## Job match scoring rules
 
 All scoring in `utils/scoreJobMatch.js` — no Claude involvement after extraction:
 
 - **Experience (25%)**: lookup table by seniority rank difference (Entry=0 → Director=6); exact match=100, ±1 level = 85/70, ±2 = 60/40, ±3+ = 15
-- **Skills (30%)**: `(fuzzy-matched required skills) / (total required skills) * 100`
+- **Skills (30%)**: `(fuzzy-matched required skills) / (total required skills) * 100`; returns matched/missing lists for UI display
 - **Salary (20%)**: `<$60K` → linear 0–40; `$60K–$80K` → 100; `$80K–$160K` → linear 100–20; `>$160K` → 20. Uses midpoint of range.
 - **Location (15%)**: SF Bay Area + Remote = 100; CA/NYC/Seattle/Austin = 60; anywhere else = 20
 - **Recency (5%)**: ≤3 days=90, ≤7=80, ≤14=60, ≤30=40, older=20
