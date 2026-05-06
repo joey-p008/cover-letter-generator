@@ -20,40 +20,56 @@ Node.js 20.15.1 is in use. Both Vite and pdf-parse are pinned to versions compat
 
 ## Architecture
 
-This is a split client/server app with no shared code between the two halves.
+Split client/server app. Three analyses run in parallel when the user clicks Generate:
 
-**Request flow:**
-1. User uploads a resume file + pastes a job posting in the React UI
-2. Frontend POSTs `multipart/form-data` to `/api/generate` (proxied by Vite to `localhost:3001`)
-3. Server parses the resume file into plain text (`parseResume.js`)
-4. Server sends resume text + job posting to Claude via the Anthropic SDK (`generateLetter.js`)
-5. Claude returns the letter as plain text following a strict template
-6. Server converts the plain text into a formatted `.docx` buffer (`createDocx.js`)
-7. Server responds with the `.docx` as an attachment; the letter text is also base64-encoded into the `X-Letter-Text` response header for the in-browser preview
-8. Frontend decodes the header for the preview pane and triggers a blob download for the file
+1. **Cover Letter** — resume + job posting → Claude → `.docx`
+2. **Connections** — LinkedIn CSV + job posting → Claude finds + ranks connections at the company
+3. **Job Match** — resume + job posting → Claude extracts structured data → code scores 6 dimensions
+
+Results appear in three tabs on the results screen. Each tab is independent; one failing doesn't block the others.
 
 **Environment:** `ANTHROPIC_API_KEY` lives in `.env` at the project root. The server loads it with `dotenv` pointing one directory up from `server/`.
 
 ## Server (`server/` — CommonJS, Express 5)
 
-- `index.js` — bootstraps Express, loads env, mounts the single route
-- `routes/generate.js` — the only route (`POST /api/generate`). Accepts `resume` file + `linkedinCsv` file (stubbed, not processed) + `jobPosting` text field via `multer` memory storage
-- `utils/parseResume.js` — dispatches to `pdf-parse` or `mammoth` based on mimetype
-- `utils/generateLetter.js` — holds the full system prompt and calls `claude-sonnet-4-6` with `max_tokens: 1024`
-- `utils/createDocx.js` — parses the letter's line structure positionally (line 1 = name at 16pt bold, line 2 = contact at 10pt, remainder at 11pt) and builds a `docx` Document with 1-inch margins, 1.15 line spacing, 6pt paragraph spacing
+**Routes** (all accept multipart via `multer` memory storage):
+- `routes/generate.js` — `POST /api/generate`: resume + jobPosting → DOCX response with `X-Letter-Text` header (base64 letter text for browser preview)
+- `routes/connections.js` — `POST /api/connections`: linkedinCsv + jobPosting → `{ connections: [...] }`
+- `routes/match.js` — `POST /api/match`: resume + jobPosting → `{ overall, breakdown, jobData, candidateData }`
+
+**Utilities:**
+- `utils/parseResume.js` — dispatches to `pdf-parse` (PDF) or `mammoth` (DOCX) by mimetype
+- `utils/generateLetter.js` — calls `claude-sonnet-4-6`; full system prompt with anti-fabrication + voice rules
+- `utils/createDocx.js` — positional line parser (line 1 = name 16pt bold, line 2 = contact 10pt, rest 11pt); 1-inch margins, Calibri, 1.15 line spacing
+- `utils/scoreConnections.js` — validates LinkedIn CSV headers, sends full CSV + job posting to Claude, returns JSON array of matched + scored connections
+- `utils/scoreJobMatch.js` — two parallel Claude calls (job extraction + candidate extraction), then pure JS scoring functions for all 6 dimensions
 
 ## Client (`client/` — ESM, React 18, Vite 5)
 
-- `App.jsx` — owns all state (files, job posting text, loading, error, result). Switches between the form view and the preview view based on whether `result` is set
-- `components/FileUpload.jsx` — drag-and-drop zones for resume and LinkedIn CSV
-- `components/JobPostingInput.jsx` — textarea for the job description
-- `components/CoverLetterPreview.jsx` — renders letter text line-by-line and triggers blob download
+**State in `App.jsx`:**
+- `isResultsView` — switches between form and results layout
+- `activeTab` — `'letter' | 'connections' | 'match'`
+- `letterResult / connectionsResult / matchResult` — each has `{ status, ...data }` where status is `'loading' | 'success' | 'error' | 'no-csv'`
 
-All styling is in `App.css` (component styles) and `index.css` (CSS custom properties / reset).
+**Components:**
+- `components/FileUpload.jsx` — drag-and-drop for resume (required) + LinkedIn CSV (optional)
+- `components/JobPostingInput.jsx` — textarea for job description
+- `components/ResultTabs.jsx` — tab navigation bar
+- `components/CoverLetterPreview.jsx` — loading/error/letter states; download button
+- `components/ConnectionsList.jsx` — ranked connection cards with score badges; handles no-csv/empty/error states
+- `components/JobMatchScore.jsx` — score circle + breakdown table with score bars; skips N/A dimensions
 
-## LinkedIn CSV
+## Job match scoring rules
 
-The file upload input exists in the UI and the field is accepted by the server via multer, but nothing is done with it. The integration point is marked with a `TODO` comment in `server/routes/generate.js`.
+All scoring in `utils/scoreJobMatch.js` — no Claude involvement after extraction:
+
+- **Experience (25%)**: lookup table by seniority rank difference (Entry=0 → Director=6); exact match=100, ±1 level = 85/70, ±2 = 60/40, ±3+ = 15
+- **Skills (30%)**: `(fuzzy-matched required skills) / (total required skills) * 100`
+- **Salary (20%)**: `<$60K` → linear 0–40; `$60K–$80K` → 100; `$80K–$160K` → linear 100–20; `>$160K` → 20. Uses midpoint of range.
+- **Location (15%)**: SF Bay Area + Remote = 100; CA/NYC/Seattle/Austin = 60; anywhere else = 20
+- **Recency (5%)**: ≤3 days=90, ≤7=80, ≤14=60, ≤30=40, older=20
+- **Competitiveness (5%)**: <10 applicants=100, ≤50=80, ≤100=60, ≤200=40, >200=20
+- Missing dimensions are skipped and remaining weights re-normalized
 
 ## Docx formatting constants
 

@@ -49,7 +49,7 @@ export default function FileUpload({ resumeFile, setResumeFile, linkedinFile, se
       </div>
       <div className="file-upload-col">
         <label className="field-label">
-          LinkedIn CSV <span className="optional">(optional, coming soon)</span>
+          LinkedIn CSV <span className="optional">(optional)</span>
         </label>
         <DropZone
           label="Upload Connections CSV"

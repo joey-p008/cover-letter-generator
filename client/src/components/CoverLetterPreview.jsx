@@ -1,4 +1,12 @@
-export default function CoverLetterPreview({ letterText, docxBlob, filename, onReset }) {
+function Spinner() {
+  return (
+    <div className="spinner-wrapper">
+      <div className="spinner" />
+    </div>
+  );
+}
+
+export default function CoverLetterPreview({ status, letterText, docxBlob, filename, error }) {
   function handleDownload() {
     const url = URL.createObjectURL(docxBlob);
     const a = document.createElement('a');
@@ -8,18 +16,18 @@ export default function CoverLetterPreview({ letterText, docxBlob, filename, onR
     URL.revokeObjectURL(url);
   }
 
+  if (status === 'loading') return <Spinner />;
+
+  if (status === 'error') {
+    return <div className="error-msg" style={{ margin: '24px' }}>{error}</div>;
+  }
+
   return (
-    <div className="preview-container">
-      <div className="preview-header">
-        <h2 className="preview-title">Your Cover Letter</h2>
-        <div className="preview-actions">
-          <button className="btn btn-primary" onClick={handleDownload}>
-            Download .docx
-          </button>
-          <button className="btn btn-secondary" onClick={onReset}>
-            Start Over
-          </button>
-        </div>
+    <div>
+      <div className="preview-actions-bar">
+        <button className="btn btn-primary" onClick={handleDownload}>
+          Download .docx
+        </button>
       </div>
       <div className="letter-preview">
         {letterText.split('\n').map((line, i) =>
