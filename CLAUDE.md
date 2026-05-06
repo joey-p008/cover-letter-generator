@@ -37,12 +37,16 @@ Results appear in three tabs on the results screen. Each tab is independent; one
 - `routes/connections.js` — `POST /api/connections`: linkedinCsv + jobPosting → `{ connections: [...] }`
 - `routes/match.js` — `POST /api/match`: resume + jobPosting → `{ overall, breakdown, jobData, candidateData }`
 
+**Multer gotcha:** The client sends one `FormData` with both `resume` and `linkedinCsv` to all three endpoints simultaneously. Every route must declare both fields in `upload.fields([...])` — if a route only declares one, multer throws `MulterError: Unexpected field` when the other arrives.
+
 **Utilities:**
 - `utils/parseResume.js` — dispatches to `pdf-parse` (PDF) or `mammoth` (DOCX) by mimetype
 - `utils/generateLetter.js` — calls `claude-sonnet-4-6`; full system prompt with anti-fabrication + voice rules
 - `utils/createDocx.js` — positional line parser (line 1 = name 16pt bold, line 2 = contact 10pt, rest 11pt); 1-inch margins, Calibri, 1.15 line spacing
-- `utils/scoreConnections.js` — validates LinkedIn CSV headers, sends full CSV + job posting to Claude, returns JSON array of matched + scored connections
+- `utils/scoreConnections.js` — validates LinkedIn CSV headers using `findHeaderRowIndex()` (scans all lines — LinkedIn exports prepend a multi-line "Notes: To protect our members' privacy..." preamble before the real header row); strips preamble before sending to Claude; returns JSON array of matched + scored connections with `linkedinUrl` included
 - `utils/scoreJobMatch.js` — two parallel Claude calls (job extraction + candidate extraction), then pure JS scoring functions for all 6 dimensions
+
+**LinkedIn CSV format:** LinkedIn exports contain these columns: `First Name, Last Name, LinkedIn URL, Email Address, Company, Position, Connected On`. The file begins with several preamble lines before the header row; `findHeaderRowIndex()` locates the real header by scanning for a line that contains all of `first name`, `last name`, `company`, and `position`. Connection names in the UI render as clickable LinkedIn profile links when `linkedinUrl` is present.
 
 ## Client (`client/` — ESM, React 18, Vite 5)
 
