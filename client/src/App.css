@@ -406,6 +406,13 @@
   color: var(--text-heading);
   font-size: 0.95rem;
   margin: 0 0 2px;
+  text-decoration: none;
+  display: block;
+}
+
+a.connection-name:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .connection-title {

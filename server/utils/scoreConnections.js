@@ -2,12 +2,19 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Fields confirmed present in the user's LinkedIn export
 const EXPECTED_HEADERS = ['first name', 'last name', 'company', 'position'];
 
-function validateCsvHeaders(csvText) {
-  const firstLine = csvText.split('\n').find(l => l.trim().length > 0) || '';
-  const headers = firstLine.toLowerCase();
-  return EXPECTED_HEADERS.every(h => headers.includes(h));
+/**
+ * LinkedIn exports often start with a multi-line "Notes:" preamble before
+ * the actual CSV header. Find the real header row by scanning all lines.
+ * Returns the index of the header row, or -1 if not found.
+ */
+function findHeaderRowIndex(lines) {
+  return lines.findIndex(line => {
+    const lower = line.toLowerCase();
+    return EXPECTED_HEADERS.every(h => lower.includes(h));
+  });
 }
 
 function stripJsonFences(text) {
@@ -15,14 +22,23 @@ function stripJsonFences(text) {
 }
 
 async function scoreConnections(csvText, jobPostingText) {
-  if (!validateCsvHeaders(csvText)) {
+  const lines = csvText.split('\n');
+  const headerIndex = findHeaderRowIndex(lines);
+
+  if (headerIndex === -1) {
     throw new Error(
       'The uploaded file does not appear to be a LinkedIn connections CSV. ' +
-      'Expected columns: First Name, Last Name, Email Address, Company, Position, Connected On.'
+      'Expected columns: First Name, Last Name, LinkedIn URL, Email Address, Company, Position, Connected On. ' +
+      'Export your connections from LinkedIn → Settings → Data Privacy → Get a copy of your data.'
     );
   }
 
+  // Strip any preamble lines so Claude receives clean CSV from the header onwards
+  const cleanCsv = lines.slice(headerIndex).join('\n');
+
   const system = `You are a professional networking advisor. You will be given a list of LinkedIn connections (as CSV) and a job posting.
+
+The CSV columns are: First Name, Last Name, LinkedIn URL, Email Address, Company, Position, Connected On.
 
 Your tasks:
 1. Extract the company name from the job posting.
@@ -43,6 +59,7 @@ JSON schema for each element:
   "firstName": string,
   "lastName": string,
   "email": string,
+  "linkedinUrl": string,
   "title": string,
   "company": string,
   "connectedOn": string,
@@ -57,7 +74,7 @@ JSON schema for each element:
     messages: [
       {
         role: 'user',
-        content: `JOB POSTING:\n${jobPostingText}\n\nLINKEDIN CONNECTIONS CSV:\n${csvText}\n\nReturn the JSON array now.`,
+        content: `JOB POSTING:\n${jobPostingText}\n\nLINKEDIN CONNECTIONS CSV:\n${cleanCsv}\n\nReturn the JSON array now.`,
       },
     ],
   });

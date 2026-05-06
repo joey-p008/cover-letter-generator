@@ -57,7 +57,13 @@ export default function ConnectionsList({ status, connections, error }) {
       {connections.map((c, i) => (
         <div key={i} className="connection-card">
           <div className="connection-info">
-            <p className="connection-name">{c.firstName} {c.lastName}</p>
+            {c.linkedinUrl ? (
+              <a className="connection-name" href={c.linkedinUrl} target="_blank" rel="noreferrer">
+                {c.firstName} {c.lastName}
+              </a>
+            ) : (
+              <p className="connection-name">{c.firstName} {c.lastName}</p>
+            )}
             <p className="connection-title">{c.title}</p>
             <p className="connection-meta">{c.company}{c.connectedOn ? ` · Connected ${c.connectedOn}` : ''}</p>
             {c.rationale && <p className="connection-rationale">{c.rationale}</p>}
